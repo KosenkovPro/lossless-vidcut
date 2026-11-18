@@ -46,6 +46,8 @@ most people already have installed.
 | Reordering | Drag the handle of a row to change the order. |
 | Compatibility check | Files that do not share the same codec, resolution or frame rate are reported, with a hint to use the re-encoding mode. |
 
+![The joiner tab](docs/joiner.png)
+
 ## Requirements
 
 * **FFmpeg 4.0 or newer**, including `ffprobe`. The application looks for both
@@ -213,8 +215,9 @@ The settings are stored as JSON in the platform configuration directory:
 
 ```bash
 cargo check --all-targets   # type check everything
-cargo test                   # run the unit tests
+cargo test                   # unit and integration tests
 cargo clippy --all-targets   # lint
+cargo fmt --check            # formatting
 cargo run                    # start the application
 ```
 
