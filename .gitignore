@@ -1,0 +1,16 @@
+# Build artefacts
+/target
+**/*.rs.bk
+
+# Editor and OS files
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local media and settings
+*.mp4
+*.mkv
+*.mov
+*.webm

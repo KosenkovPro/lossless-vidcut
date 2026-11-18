@@ -1,0 +1,40 @@
+[package]
+name = "lossless-vidcut"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+description = "Cross-platform lightweight desktop app for fast lossless video splitting and joining, powered by ffmpeg"
+license = "MIT"
+repository = "https://github.com/KosenkovPro/lossless-vidcut"
+readme = "README.md"
+keywords = ["video", "ffmpeg", "lossless", "gui", "splitter", "joiner"]
+categories = ["multimedia::video", "gui"]
+
+[dependencies]
+anyhow = "1"
+dirs = "6"
+eframe = "0.34"
+egui = "0.34"
+env_logger = "0.11"
+log = "0.4"
+parking_lot = "0.13"
+rfd = "0.18"
+rodio = "0.20"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "process",
+    "io-util",
+    "sync",
+    "time",
+] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
