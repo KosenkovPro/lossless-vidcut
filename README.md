@@ -1,5 +1,9 @@
 # Lossless VidCut
 
+[![CI](https://github.com/KosenkovPro/lossless-vidcut/actions/workflows/ci.yml/badge.svg)](https://github.com/KosenkovPro/lossless-vidcut/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/KosenkovPro/lossless-vidcut?label=release)](https://github.com/KosenkovPro/lossless-vidcut/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A fast, lightweight desktop application for **splitting and joining videos without
 re-encoding them**. Written in Rust with a native `egui` interface, it runs on
 Windows, Linux and macOS and only needs the `ffmpeg` command line tools that
