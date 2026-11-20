@@ -83,19 +83,17 @@ case "$TARGET" in
     )
     ;;
   macos-x86_64)
+    # Built natively on an Intel runner: x264 ignores unknown options and
+    # always builds for the architecture of the machine it runs on.
     export MACOSX_DEPLOYMENT_TARGET="11.0"
-    export CFLAGS_EXTRA="-arch x86_64"
-    export LDFLAGS_EXTRA="-arch x86_64"
     X264_CONFIG=(
-      --arch=x86_64 --prefix="$PREFIX"
-      --enable-static --disable-shared --disable-cli --enable-pic
+      --prefix="$PREFIX" --enable-static --disable-shared --disable-cli --enable-pic
     )
     FFMPEG_CONFIG=(
       --arch=x86_64 --prefix="$PREFIX" --disable-shared --enable-static
       --disable-doc --disable-debug
       --enable-gpl --enable-version3 --enable-libx264 --pkg-config-flags=--static
-      --extra-cflags="-I${PREFIX}/include -arch x86_64"
-      --extra-ldflags="-L${PREFIX}/lib -arch x86_64"
+      --extra-cflags="-I${PREFIX}/include" --extra-ldflags="-L${PREFIX}/lib"
     )
     ;;
   *)
@@ -159,4 +157,10 @@ cp "${WORK_DIR}/sources/COPYING.LGPLv3" "$OUT_DIR/COPYING.LGPLv3"
 
 echo "== result =="
 ls -l "$OUT_DIR"
-"${OUT_DIR}/ffmpeg${EXE}" -version | head -n 3
+
+if [ "$TARGET" = "windows-x86_64" ]; then
+  # A Windows binary cannot be executed on the Linux build machine.
+  head -c 2 "${OUT_DIR}/ffmpeg${EXE}" | od -c | head -n 1
+else
+  "${OUT_DIR}/ffmpeg${EXE}" -version | head -n 3
+fi

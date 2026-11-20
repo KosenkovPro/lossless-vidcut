@@ -35,7 +35,7 @@ jobs:
           - target: macos-aarch64
             os: macos-latest
           - target: macos-x86_64
-            os: macos-latest
+            os: macos-15-intel
     steps:
       - uses: actions/checkout@v4
 
@@ -50,7 +50,7 @@ jobs:
 
       - name: Install the build tools (macOS)
         if: runner.os == 'macOS'
-        run: brew install nasm pkg-config
+        run: brew install nasm xz
 
       - name: Build FFmpeg and ffprobe
         run: bash scripts/build-ffmpeg.sh "${{ matrix.target }}" "${{ runner.temp }}/ffmpeg-out"
@@ -82,7 +82,7 @@ jobs:
             rust_target: aarch64-apple-darwin
             exe: ''
           - target: macos-x86_64
-            os: macos-latest
+            os: macos-15-intel
             rust_target: x86_64-apple-darwin
             exe: ''
     steps:
