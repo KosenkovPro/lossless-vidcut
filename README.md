@@ -56,11 +56,34 @@ most people already have installed.
 * A sound card is optional. Without one the application still works, it simply
   plays video without audio.
 
+The official releases ship FFmpeg and ffprobe next to the application binary,
+so nothing has to be installed at all: unpack the archive and start the
+program. If you prefer your own build, delete the two files and the
+application falls back to `PATH`.
+
 | Platform | How to install FFmpeg |
 |---|---|
 | **Windows** | `winget install Gyan.FFmpeg` or download a build from [ffmpeg.org](https://ffmpeg.org/download.html) |
 | **Ubuntu / Debian** | `sudo apt install ffmpeg` |
 | **macOS** | `brew install ffmpeg` |
+
+## Downloads
+
+Prebuilt archives are published on every release page. Each one contains the
+application, a matching `ffmpeg` and `ffprobe`, and the license texts of both
+projects.
+
+| Archive | Platform |
+|---|---|
+| `lossless-vidcut-linux-x86_64.tar.gz` | Linux x86_64, glibc 2.35 or newer |
+| `lossless-vidcut-windows-x86_64.zip` | Windows x86_64 |
+| `lossless-vidcut-macos-aarch64.tar.gz` | macOS Apple Silicon |
+| `lossless-vidcut-macos-x86_64.tar.gz` | macOS Intel |
+
+The archives are produced by the release workflow in
+`.github/workflows/release.yml`, which builds the application and FFmpeg from
+source on every platform and publishes the result together with the checksums
+and the complete corresponding source code of FFmpeg.
 
 ## Building from source
 
@@ -85,7 +108,7 @@ The binary is written to `target\release\lossless-vidcut.exe`.
 
 ```bash
 sudo apt update
-sudo apt install build-essential pkg-config libssl-dev
+sudo apt install build-essential pkg-config libasound2-dev
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source "$HOME/.cargo/env"
 
@@ -96,12 +119,10 @@ cargo build --release
 
 The binary is written to `target/release/lossless-vidcut`.
 
-The native file dialog is provided by `rfd`, which uses
-[GTK 3](https://packages.ubuntu.com/search?keywords=libgtk-3-dev) on Linux:
-
-```bash
-sudo apt install libgtk-3-dev
-```
+The sound output of `rodio` uses ALSA, so `libasound2-dev` is the header
+package that the build needs. The native file dialog of `rfd` talks to the
+XDG desktop portal, which is present on every current desktop installation; a
+headless server has no dialog and no file picker.
 
 ### macOS
 
@@ -223,4 +244,15 @@ cargo run                    # start the application
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+The application itself is MIT, see [LICENSE](LICENSE).
+
+The official releases additionally contain `ffmpeg` and `ffprobe`, which are
+separate programs that the application starts as child processes. They are
+built from source with `--enable-gpl --enable-version3` and are therefore
+distributed under the GNU General Public License version 3 or later. Their
+license texts (`COPYING.GPLv3` and `COPYING.LGPLv3`) and the complete
+corresponding source code are part of every release archive.
+
+This software uses code from the [FFmpeg](https://ffmpeg.org) project under
+the GPLv3, and its source can be downloaded from
+<https://ffmpeg.org/download.html>.

@@ -468,7 +468,27 @@ fn detect_tools(settings: &Settings) -> Option<Tools> {
             }
         }
     }
-    Tools::detect().filter(|tools| tools.valid())
+    portable_tools().or_else(|| Tools::detect().filter(|tools| tools.valid()))
+}
+
+/// Look for FFmpeg next to the application binary.
+///
+/// Portable releases ship the tools either directly beside the executable or
+/// in a `ffmpeg` subdirectory, so a copied folder keeps working without any
+/// installation and without touching `PATH`.
+fn portable_tools() -> Option<Tools> {
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+
+    let candidates = [dir.to_path_buf(), dir.join("ffmpeg")];
+    for candidate in candidates {
+        if let Some(tools) = Tools::from_dir(&candidate) {
+            if tools.valid() {
+                return Some(tools);
+            }
+        }
+    }
+    None
 }
 
 /// Placeholder used before the tools have been found.

@@ -1,0 +1,256 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to publish, for example v0.1.0'
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ffmpeg:
+    name: FFmpeg · ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            os: ubuntu-22.04
+          - target: windows-x86_64
+            os: ubuntu-22.04
+          - target: macos-aarch64
+            os: macos-latest
+          - target: macos-x86_64
+            os: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the build tools (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config nasm yasm xz-utils
+          if [ "${{ matrix.target }}" = "windows-x86_64" ]; then
+            sudo apt-get install -y mingw-w64
+          fi
+
+      - name: Install the build tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install nasm pkg-config
+
+      - name: Build FFmpeg and ffprobe
+        run: bash scripts/build-ffmpeg.sh "${{ matrix.target }}" "${{ runner.temp }}/ffmpeg-out"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.target }}
+          path: ${{ runner.temp }}/ffmpeg-out
+          if-no-files-found: error
+          retention-days: 7
+
+  app:
+    name: App · ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            os: ubuntu-22.04
+            rust_target: x86_64-unknown-linux-gnu
+            exe: ''
+          - target: windows-x86_64
+            os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            exe: '.exe'
+          - target: macos-aarch64
+            os: macos-latest
+            rust_target: aarch64-apple-darwin
+            exe: ''
+          - target: macos-x86_64
+            os: macos-latest
+            rust_target: x86_64-apple-darwin
+            exe: ''
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the ALSA headers (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libasound2-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.rust_target }}
+
+      - name: Build the application
+        run: cargo build --release --target ${{ matrix.rust_target }}
+
+      - name: Stage the binary
+        shell: bash
+        run: |
+          mkdir -p app
+          cp "target/${{ matrix.rust_target }}/release/lossless-vidcut${{ matrix.exe }}" "app/lossless-vidcut${{ matrix.exe }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ matrix.target }}
+          path: app
+          if-no-files-found: error
+          retention-days: 7
+
+  sources:
+    name: FFmpeg sources
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch and verify the sources
+        run: bash scripts/fetch-sources.sh "${{ runner.temp }}/sources"
+
+      - name: Pack the corresponding source code
+        run: |
+          tar -czf "${{ runner.temp }}/lossless-vidcut-ffmpeg-sources.tar.xz" \
+            -C "${{ runner.temp }}/sources" .
+          mkdir -p sources
+          cp "${{ runner.temp }}/lossless-vidcut-ffmpeg-sources.tar.xz" sources/
+          cp "${{ runner.temp }}/sources/COPYING.GPLv3" sources/
+          cp "${{ runner.temp }}/sources/COPYING.LGPLv3" sources/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-sources
+          path: sources
+          if-no-files-found: error
+          retention-days: 7
+
+  package:
+    name: Package · ${{ matrix.target }}
+    needs: [ffmpeg, app]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            format: tar.gz
+          - target: windows-x86_64
+            format: zip
+          - target: macos-aarch64
+            format: tar.gz
+          - target: macos-x86_64
+            format: tar.gz
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install zip
+        run: sudo apt-get update && sudo apt-get install -y zip
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-${{ matrix.target }}
+          path: ffmpeg
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: app-${{ matrix.target }}
+          path: app
+
+      - name: Assemble the archive
+        run: bash scripts/package-release.sh "${{ matrix.target }}" "${{ matrix.format }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish the release
+    needs: [package, sources]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: release-*
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ffmpeg-sources
+          path: dist/sources
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          printf '## Lossless VidCut %s\n\n' "$TAG" > notes.md
+          cat >> notes.md <<'NOTES'
+          A lightweight cross-platform desktop app for cutting and joining video
+          **without re-encoding**, built with Rust and egui.
+
+          | Archive | Platform |
+          |---|---|
+          | `lossless-vidcut-linux-x86_64.tar.gz` | Linux x86_64 (glibc 2.35 or newer) |
+          | `lossless-vidcut-windows-x86_64.zip` | Windows x86_64 |
+          | `lossless-vidcut-macos-aarch64.tar.gz` | macOS Apple Silicon |
+          | `lossless-vidcut-macos-x86_64.tar.gz` | macOS Intel |
+
+          Unpack the archive and run `lossless-vidcut`. The `ffmpeg` and `ffprobe`
+          binaries are included next to the application and are picked up
+          automatically, so nothing has to be installed.
+
+          ### FFmpeg
+
+          The archives contain FFmpeg 9.0.2 built from source with libx264. The
+          binaries are separate programs that the application starts as child
+          processes; the application itself stays under the MIT license.
+
+          FFmpeg is licensed under the GNU General Public License version 3 or
+          later. The complete corresponding source code of FFmpeg and libx264
+          is published with this release as
+          `lossless-vidcut-ffmpeg-sources.tar.xz`.
+
+          This software uses code from the FFmpeg project under the GPLv3 and its
+          source can be downloaded from https://ffmpeg.org/download.html.
+          NOTES
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "the release already exists, updating the assets"
+            gh release upload "$TAG" \
+              dist/*.tar.gz dist/*.zip dist/*.sha256 dist/sources/*.tar.xz --clobber
+          else
+            gh release create "$TAG" \
+              dist/lossless-vidcut-linux-x86_64.tar.gz \
+              dist/lossless-vidcut-linux-x86_64.tar.gz.sha256 \
+              dist/lossless-vidcut-windows-x86_64.zip \
+              dist/lossless-vidcut-windows-x86_64.zip.sha256 \
+              dist/lossless-vidcut-macos-aarch64.tar.gz \
+              dist/lossless-vidcut-macos-aarch64.tar.gz.sha256 \
+              dist/lossless-vidcut-macos-x86_64.tar.gz \
+              dist/lossless-vidcut-macos-x86_64.tar.gz.sha256 \
+              dist/sources/lossless-vidcut-ffmpeg-sources.tar.xz \
+              --title "Lossless VidCut $TAG" --notes-file notes.md
+          fi
