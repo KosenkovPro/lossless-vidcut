@@ -468,7 +468,11 @@ fn detect_tools(settings: &Settings) -> Option<Tools> {
             }
         }
     }
-    portable_tools().or_else(|| Tools::detect().filter(|tools| tools.valid()))
+    let tools = portable_tools().or_else(|| Tools::detect().filter(|tools| tools.valid()));
+    if let Some(tools) = tools.as_ref() {
+        log::info!("using FFmpeg at {}", tools.ffmpeg.display());
+    }
+    tools
 }
 
 /// Look for FFmpeg next to the application binary.
