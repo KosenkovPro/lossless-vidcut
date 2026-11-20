@@ -190,6 +190,9 @@ jobs:
     needs: [package, sources]
     runs-on: ubuntu-latest
     steps:
+      # gh needs the repository to work out the tag it is publishing.
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
