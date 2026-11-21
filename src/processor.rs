@@ -237,6 +237,23 @@ pub async fn run_ffmpeg(
     progress: &Arc<Mutex<Progress>>,
     cancel: &AtomicBool,
 ) -> Result<()> {
+    run_ffmpeg_within(ffmpeg, args, duration, progress, cancel, 0.0, 1.0).await
+}
+
+/// Run `ffmpeg` with `args`, reporting the progress.
+///
+/// The progress bar covers the part of the job between `base` and
+/// `base + span`, so that several steps can share one bar.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_ffmpeg_within(
+    ffmpeg: &Path,
+    args: &[OsString],
+    duration: f64,
+    progress: &Arc<Mutex<Progress>>,
+    cancel: &AtomicBool,
+    base: f32,
+    span: f32,
+) -> Result<()> {
     let mut command = Command::new(ffmpeg);
     command
         .args(args)
@@ -279,7 +296,8 @@ pub async fn run_ffmpeg(
                                 if let Ok(mut state) = progress.lock() {
                                     state.elapsed_seconds = seconds;
                                     if duration > 0.0 {
-                                        state.fraction = (seconds / duration).clamp(0.0, 1.0) as f32;
+                                        let part = (seconds / duration).clamp(0.0, 1.0) as f32;
+                                        state.fraction = (base + span * part).clamp(0.0, 1.0);
                                     }
                                 }
                             }
@@ -487,9 +505,10 @@ pub async fn export_clips(
         let part = workdir
             .path()
             .join(part_file_name("part", "mkv", index + 1));
+        let base = index as f32 / total * 0.7;
         if let Ok(mut state) = progress.lock() {
             state.stage = format!("Cutting clip {} of {}", index + 1, clips.len());
-            state.fraction = index as f32 / total * 0.7;
+            state.fraction = base;
         }
         let args = cut_args(
             &clip.path,
@@ -499,7 +518,16 @@ pub async fn export_clips(
             mode,
             encoder,
         );
-        run_ffmpeg(ffmpeg, &args, clip.duration(), progress, cancel).await?;
+        run_ffmpeg_within(
+            ffmpeg,
+            &args,
+            clip.duration(),
+            progress,
+            cancel,
+            base,
+            0.7 / total,
+        )
+        .await?;
         parts.push(part);
     }
 
@@ -512,7 +540,7 @@ pub async fn export_clips(
         state.fraction = 0.75;
     }
     let args = concat_args(&list, output, mode, encoder);
-    run_ffmpeg(ffmpeg, &args, total_duration, progress, cancel).await?;
+    run_ffmpeg_within(ffmpeg, &args, total_duration, progress, cancel, 0.7, 0.3).await?;
 
     if let Ok(mut state) = progress.lock() {
         state.fraction = 1.0;
@@ -521,6 +549,7 @@ pub async fn export_clips(
     Ok(output.to_path_buf())
 }
 
+/// The message that tells the user that the job was cancelled.
 fn cancelled_message(log: &str) -> String {
     if log.trim().is_empty() {
         "cancelled".to_string()

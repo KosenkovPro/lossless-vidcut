@@ -177,6 +177,12 @@ fn ru(key: &'static str) -> &'static str {
         "Nothing to cut — mark an in and an out point first." => {
             "Нечего резать — сначала отметьте начало и конец."
         }
+        "There is nothing to cut here." => "Здесь нечего резать.",
+        "The clip was cut at the play head." => "Клип разрезан по указателю воспроизведения.",
+        "There is nothing to export." => "Нечего экспортировать.",
+        "{count} clip(s) were skipped because their file is gone." => {
+            "Пропущено клипов: {count} — их файлы больше не доступны."
+        }
         "Nothing to undo." => "Отменять нечего.",
         "Nothing to redo." => "Повторять нечего.",
 
@@ -192,8 +198,8 @@ fn ru(key: &'static str) -> &'static str {
         "Choose where the result should be written." => "Выберите, куда сохранить результат.",
         "Export the timeline" => "Экспортировать таймлайн",
         "Snap to key frames (lossless)" => "Привязка к ключевым кадрам (без потерь)",
-        "The files differ: codecs [{codecs}], resolutions [{resolutions}], frame rates [{rates}]. A stream copy may fail, use “Precise” to re-encode." => {
-            "Файлы различаются: кодекы [{codecs}], разрешения [{resolutions}], частоты кадров [{rates}]. Копирование потока может не сработать — используйте «Точно»."
+        "The files differ: codecs [{codecs}], resolutions [{resolutions}], frame rates [{rates}], audio [{audio}]. A stream copy may fail, use “Precise” to re-encode." => {
+            "Файлы различаются: кодекы [{codecs}], разрешения [{resolutions}], частоты кадров [{rates}], звук [{audio}]. Копирование потока может не сработать — используйте «Точно»."
         }
         "All clips share the same format." => "Все клипы в одном формате.",
         "The selected files do not share the same format. Use “Precise” to re-encode them." => {
@@ -310,7 +316,14 @@ mod tests {
         let mut index = 0usize;
         while index < bytes.len() {
             let rest = &source[index..];
-            let Some(found) = rest.find("tr(").or_else(|| rest.find("tf(")) else {
+            // The next call of either function, whichever comes first.
+            let found = match (rest.find("tr("), rest.find("tf(")) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (Some(a), None) => Some(a),
+                (None, Some(b)) => Some(b),
+                (None, None) => None,
+            };
+            let Some(found) = found else {
                 break;
             };
             index += found + 3;

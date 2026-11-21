@@ -283,11 +283,14 @@ impl App {
         if self.editor.split_selected() {
             self.toasts.info(
                 &self.ctx,
-                tr(self.lang(), "The clip was added to the timeline."),
+                tr(self.lang(), "The clip was cut at the play head."),
             );
         } else if self.editor.project.selected_clip().is_none() {
             self.toasts
                 .info(&self.ctx, tr(self.lang(), "No clip is selected"));
+        } else {
+            self.toasts
+                .info(&self.ctx, tr(self.lang(), "There is nothing to cut here."));
         }
     }
 

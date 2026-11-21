@@ -450,15 +450,38 @@ impl Editor {
         }
         if let Some((clip_id, source_time)) = self.project.locate(self.playhead) {
             if let Some(clip) = self.project.clip(clip_id) {
-                if self.player_source != Some(clip.source_id) {
-                    let source_id = clip.source_id;
+                let source_id = clip.source_id;
+                if self.player_source != Some(source_id) {
                     self.project.select_only(clip_id);
                     self.project.selected_source = Some(source_id);
                     self.open_player(source_id, source_time);
+                } else {
+                    // The preview shows the right file already, but it may
+                    // stand at another position.
+                    self.player.seek(source_time);
                 }
             }
         }
         self.player.toggle_play();
+    }
+
+    /// The position inside the source that belongs to the play head.
+    ///
+    /// The play head lives on the timeline, while the cut points live inside
+    /// the source of the selected clip. This converts the first into the
+    /// second and falls back to the position of the preview.
+    fn playhead_in_source(&self) -> f64 {
+        let Some(clip) = self.project.selected_clip() else {
+            return self.source_position();
+        };
+        let Some(placement) = self.project.placement_of(clip.id) else {
+            return self.source_position();
+        };
+        let offset = self.playhead - placement.start;
+        if offset < 0.0 || offset > placement.duration {
+            return self.source_position();
+        }
+        clip.start + offset
     }
 
     /// Keep the play head in step with the position inside the source.
@@ -528,7 +551,7 @@ impl Editor {
         if self.player_source != Some(source_id) {
             return false;
         }
-        let position = self.source_position();
+        let position = self.playhead_in_source();
         let Some(new_id) = self.project.split_clip(clip_id, position) else {
             return false;
         };
@@ -540,9 +563,11 @@ impl Editor {
     /// Cut the selected clip and tell the user what happened.
     fn split_selected_with_feedback(&mut self, ctx: &egui::Context, toasts: &mut Toasts) {
         if self.split_selected() {
-            toasts.info(ctx, tr(self.lang, "The clip was added to the timeline."));
+            toasts.info(ctx, tr(self.lang, "The clip was cut at the play head."));
         } else if self.project.selected_clip().is_none() {
             toasts.info(ctx, tr(self.lang, "No clip is selected"));
+        } else {
+            toasts.info(ctx, tr(self.lang, "There is nothing to cut here."));
         }
     }
 
@@ -1005,7 +1030,7 @@ impl Editor {
         let mut select: Option<u64> = None;
 
         egui::ScrollArea::vertical().show(ui, |ui| {
-            for source in &self.project.sources {
+            for source in self.project.visible_sources() {
                 let id = source.id;
                 let selected = self.project.selected_source == Some(id);
                 ui.push_id(id, |ui| {
@@ -1096,24 +1121,22 @@ impl Editor {
 
     /// Remove a source and every clip that was cut from it.
     fn remove_source(&mut self, id: u64) {
-        let clip_ids: Vec<u64> = self
-            .project
-            .clips
-            .iter()
-            .filter(|clip| clip.source_id == id)
-            .map(|clip| clip.id)
-            .collect();
-        for clip_id in clip_ids {
-            self.project.remove_clip(clip_id);
+        if !self.project.remove_source(id) {
+            return;
         }
-        self.project.sources.retain(|source| source.id != id);
         if self.project.selected_source == Some(id) {
-            self.project.selected_source = self.project.sources.first().map(|source| source.id);
-            if let Some(next) = self.project.selected_source {
-                self.open_player(next, 0.0);
-            } else {
-                self.player.close();
-                self.player_source = None;
+            let next = self
+                .project
+                .visible_sources()
+                .next()
+                .map(|source| source.id);
+            self.project.selected_source = next;
+            match next {
+                Some(next) => self.open_player(next, 0.0),
+                None => {
+                    self.player.close();
+                    self.player_source = None;
+                }
             }
         }
     }
@@ -1194,8 +1217,18 @@ impl Editor {
                 });
         });
 
-        if let Some(reason) = self.project.incompatibility_reason() {
+        if let Some(details) = self.project.incompatibility() {
             ui.colored_label(Color32::from_rgb(240, 180, 80), "⚠");
+            let reason = tf(
+                self.lang,
+                "The files differ: codecs [{codecs}], resolutions [{resolutions}], frame rates [{rates}], audio [{audio}]. A stream copy may fail, use “Precise” to re-encode.",
+                &[
+                    ("codecs", &details.codecs),
+                    ("resolutions", &details.resolutions),
+                    ("rates", &details.rates),
+                    ("audio", &details.audio),
+                ],
+            );
             ui.label(RichText::new(reason).color(Color32::from_rgb(240, 196, 130)));
         } else if self.project.clips.len() >= 2 {
             ui.colored_label(Color32::from_rgb(96, 200, 120), "✔");
@@ -1295,21 +1328,31 @@ impl Editor {
             return;
         };
 
-        let clips: Vec<ExportClip> = self
-            .project
-            .clips
-            .iter()
-            .filter_map(|clip| {
-                let source = self.project.source(clip.source_id)?;
-                Some(ExportClip {
+        let mut clips: Vec<ExportClip> = Vec::new();
+        let mut skipped = 0usize;
+        for clip in &self.project.clips {
+            match self.project.source(clip.source_id) {
+                Some(source) => clips.push(ExportClip {
                     path: source.path.clone(),
                     start: clip.start,
                     end: clip.end,
-                })
-            })
-            .collect();
+                }),
+                None => skipped += 1,
+            }
+        }
         if clips.is_empty() {
+            toasts.error(ctx, tr(self.lang, "There is nothing to export."));
             return;
+        }
+        if skipped > 0 {
+            toasts.warning(
+                ctx,
+                tf(
+                    self.lang,
+                    "{count} clip(s) were skipped because their file is gone.",
+                    &[("count", &skipped.to_string())],
+                ),
+            );
         }
 
         let count = clips.len();
