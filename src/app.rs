@@ -280,20 +280,14 @@ impl App {
 
     /// Cut the selected clip at the play head.
     fn split_selected(&mut self) {
-        let Some(clip) = self.editor.project.selected_clip() else {
-            self.toasts
-                .info(&self.ctx, tr(self.lang(), "No clip is selected"));
-            return;
-        };
-        let clip_id = clip.id;
-        let source_id = clip.source_id;
-        let position = self.editor.player.position();
-        if self.editor.project.split_clip(clip_id, position).is_some() {
-            self.editor.project.selected_source = Some(source_id);
+        if self.editor.split_selected() {
             self.toasts.info(
                 &self.ctx,
                 tr(self.lang(), "The clip was added to the timeline."),
             );
+        } else if self.editor.project.selected_clip().is_none() {
+            self.toasts
+                .info(&self.ctx, tr(self.lang(), "No clip is selected"));
         }
     }
 

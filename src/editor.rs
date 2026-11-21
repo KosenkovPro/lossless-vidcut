@@ -390,7 +390,7 @@ impl Editor {
             }
             Action::MarkIn => self.mark_in(ctx, toasts),
             Action::MarkOut => self.mark_out(ctx, toasts),
-            Action::Split => self.split_selected(ctx, toasts),
+            Action::Split => self.split_selected_with_feedback(ctx, toasts),
             Action::Extract => self.extract_marked(ctx, toasts),
             Action::JumpStart => {
                 self.player.seek(0.0);
@@ -509,23 +509,34 @@ impl Editor {
     }
 
     /// Cut the selected clip at the play head.
-    fn split_selected(&mut self, ctx: &egui::Context, toasts: &mut Toasts) {
+    ///
+    /// The clip is only cut when the preview shows the file the clip was cut
+    /// from, otherwise the position of the play head would belong to a
+    /// different file.
+    pub fn split_selected(&mut self) -> bool {
         let Some(clip) = self.project.selected_clip() else {
-            toasts.info(
-                ctx,
-                tr(
-                    self.lang,
-                    "Nothing to cut — mark an in and an out point first.",
-                ),
-            );
-            return;
+            return false;
         };
         let clip_id = clip.id;
         let source_id = clip.source_id;
+        if self.player_source != Some(source_id) {
+            return false;
+        }
         let position = self.source_position();
-        if self.project.split_clip(clip_id, position).is_some() {
-            self.project.selected_source = Some(source_id);
+        let Some(new_id) = self.project.split_clip(clip_id, position) else {
+            return false;
+        };
+        self.project.selected_source = Some(source_id);
+        self.project.select_only(new_id);
+        true
+    }
+
+    /// Cut the selected clip and tell the user what happened.
+    fn split_selected_with_feedback(&mut self, ctx: &egui::Context, toasts: &mut Toasts) {
+        if self.split_selected() {
             toasts.info(ctx, tr(self.lang, "The clip was added to the timeline."));
+        } else if self.project.selected_clip().is_none() {
+            toasts.info(ctx, tr(self.lang, "No clip is selected"));
         }
     }
 
