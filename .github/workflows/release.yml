@@ -225,6 +225,27 @@ jobs:
           binaries are included next to the application and are picked up
           automatically, so nothing has to be installed.
 
+          ### One timeline
+
+          The splitter and the joiner are one surface now. Drop your videos onto
+          the window, cut them with the scissors at the play head, drag the pieces
+          into the order you want and export the result. A cut is a stream copy,
+          so no frame is ever re-encoded.
+
+          ### Highlights
+
+          * **English and Russian** — the language is detected from the system on
+            the first start and can be changed in the settings or in the toolbar.
+          * **No console window** — on Windows the program is a real GUI
+            application, and the FFmpeg processes it starts never flash a black
+            window either.
+          * **Desktop shortcut** — one button in the settings puts a shortcut on
+            the desktop of the current user.
+          * **Shortcuts of the big names** — <kbd>S</kbd> cuts at the play head,
+            <kbd>I</kbd> and <kbd>O</kbd> mark the range, <kbd>Ctrl</kbd>+<kbd>Z</kbd>
+            undoes, and the timeline is zoomed and scrolled like in Premiere,
+            Resolve, Shotcut or Kdenlive.
+
           ### FFmpeg
 
           The archives contain FFmpeg 9.0.2 built from source with libx264. The

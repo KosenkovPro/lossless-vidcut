@@ -34,7 +34,7 @@ without ever re-encoding a frame.
   before they are joined, and every failure ends up in the status bar.
 * **Small dependency footprint.** The GUI is pure Rust, the file dialogs use the
   native pickers of your platform, and there is no bundled FFmpeg.
-* ** speaks your language.** The interface is available in English and Russian,
+* **Speaks your language.** The interface is available in English and Russian,
   and you can switch at any time.
 
 ## Features
@@ -52,7 +52,7 @@ without ever re-encoding a frame.
 | Waveform | The audio envelope is rendered behind the timeline. |
 | Undo and redo | <kbd>Ctrl</kbd>+<kbd>Z</kbd> and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> cover every change of the timeline. |
 | Lossless or precise | `-c copy` for instant cuts, or a re-encode for cuts that land exactly between two frames. |
-| Compatibility check | Clips that do not share the same codec, resolution or frame rate are reported, with a hint to use the re-encoding mode. |
+| Compatibility check | Clips that do not share the same codec, resolution, frame rate or audio format are reported, with a hint to use the re-encoding mode. |
 
 ### The application
 
