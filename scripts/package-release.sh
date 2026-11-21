@@ -33,12 +33,6 @@ mkdir -p "$PKG" "$DIST"
 cp "app/${EXE}" "$PKG/${EXE}"
 cp "ffmpeg/ffmpeg${FF_EXE}" "$PKG/ffmpeg${FF_EXE}"
 cp "ffmpeg/ffprobe${FF_EXE}" "$PKG/ffprobe${FF_EXE}"
-
-# The artifact download does not keep the permission bits, so the programs are
-# marked as executable again here.
-chmod +x "$PKG/${EXE}" "$PKG/ffmpeg${FF_EXE}" "$PKG/ffprobe${FF_EXE}"
-chmod 644 "$PKG/README.md" "$PKG/LICENSE" "$PKG/COPYING.GPLv3" "$PKG/COPYING.LGPLv3" \
-  "$PKG/configure-line.txt" "$PKG/FFMPEG-NOTICE.txt"
 cp "ffmpeg/COPYING.GPLv3" "$PKG/COPYING.GPLv3"
 cp "ffmpeg/COPYING.LGPLv3" "$PKG/COPYING.LGPLv3"
 cp README.md "$PKG/README.md"
@@ -81,6 +75,12 @@ are included as COPYING.GPLv3 and COPYING.LGPLv3.
 EOF
 
 cp "ffmpeg/configure-line.txt" "$PKG/configure-line.txt"
+
+# The artifact download does not keep the permission bits, so the programs are
+# marked as executable again here and the text files get a plain mode.
+chmod +x "$PKG/${EXE}" "$PKG/ffmpeg${FF_EXE}" "$PKG/ffprobe${FF_EXE}"
+chmod 644 "$PKG/README.md" "$PKG/LICENSE" "$PKG/COPYING.GPLv3" "$PKG/COPYING.LGPLv3" \
+  "$PKG/configure-line.txt" "$PKG/FFMPEG-NOTICE.txt"
 
 cd "$STAGE"
 if [ "$FORMAT" = "zip" ]; then
