@@ -584,6 +584,32 @@ impl Project {
         self.incompatibility().is_none()
     }
 
+    /// The number of clips whose start or end does not lie on a key frame.
+    ///
+    /// A stream copy can only begin and end at a key frame, so such a clip
+    /// brings material that the user did not select.
+    pub fn cuts_without_key_frames(&self) -> usize {
+        let mut count = 0;
+        for clip in &self.clips {
+            let Some(source) = self.source(clip.source_id) else {
+                continue;
+            };
+            if source.keyframes.is_empty() {
+                continue;
+            }
+            let lies_on_a_key_frame = |time: f64| {
+                source
+                    .keyframes
+                    .iter()
+                    .any(|frame| (frame - time).abs() < 0.05)
+            };
+            if !lies_on_a_key_frame(clip.start) || !lies_on_a_key_frame(clip.end) {
+                count += 1;
+            }
+        }
+        count
+    }
+
     /// Describe why the clips cannot be joined with a plain stream copy.
     ///
     /// The details are returned without a sentence around them, because the
@@ -920,6 +946,21 @@ mod tests {
         assert_eq!(project.clips[0].end, 7.0);
         assert_eq!(project.clips[1].start, 7.0);
         assert_eq!(project.clips[1].id, second);
+    }
+
+    #[test]
+    fn clips_without_a_key_frame_are_counted() {
+        let mut project = Project::new();
+        let id = source_with_keyframes(&mut project);
+        project
+            .cut(id, 0.0, 20.0, true)
+            .expect("the clip is created");
+        assert_eq!(project.cuts_without_key_frames(), 0);
+
+        project
+            .cut(id, 5.4, 12.6, false)
+            .expect("the clip is created");
+        assert_eq!(project.cuts_without_key_frames(), 1);
     }
 
     #[test]

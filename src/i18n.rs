@@ -176,6 +176,7 @@ const TRANSLATIONS: &[(&str, &str)] = &[
     ("Snap the markers to key frames", "Привязывать метки к ключевым кадрам"),
     ("The files differ: codecs [{codecs}], resolutions [{resolutions}], frame rates [{rates}], audio [{audio}]. A stream copy may fail, use “Precise” to re-encode.", "Файлы различаются: кодекы [{codecs}], разрешения [{resolutions}], частоты кадров [{rates}], звук [{audio}]. Копирование потока может не сработать — используйте «Точно»."),
     ("All clips share the same format.", "Все клипы в одном формате."),
+    ("{count} clip(s) do not start or end at a key frame. The result may contain a little more material than the timeline shows.", "Клипов без ключевого кадра на границе: {count}. Результат может содержать немного больше материала, чем показано на таймлайне."),
     ("FFmpeg location", "Расположение FFmpeg"),
     ("searched in PATH", "ищется в PATH"),
     ("Auto detect", "Определить автоматически"),

@@ -1244,6 +1244,22 @@ impl Editor {
             ui.label(tr(self.lang, "All clips share the same format."));
         }
 
+        // A stream copy can only begin and end at a key frame. Clips whose
+        // boundary lies in between bring material that the timeline does not
+        // show, so the user is warned about it.
+        if self.encode_mode == EncodeMode::Lossless {
+            let outside = self.project.cuts_without_key_frames();
+            if outside > 0 {
+                ui.colored_label(Color32::from_rgb(240, 180, 80), "⚠");
+                let reason = tf(
+                    self.lang,
+                    "{count} clip(s) do not start or end at a key frame. The result may contain a little more material than the timeline shows.",
+                    &[("count", &outside.to_string())],
+                );
+                ui.label(RichText::new(reason).color(Color32::from_rgb(240, 196, 130)));
+            }
+        }
+
         ui.checkbox(
             &mut self.snap,
             tr(self.lang, "Snap the markers to key frames"),
