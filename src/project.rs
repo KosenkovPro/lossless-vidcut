@@ -349,13 +349,22 @@ impl Project {
     }
 
     /// Move a clip to another position in the timeline.
+    ///
+    /// The move itself is not remembered, because a drag produces a whole
+    /// series of moves that belong to a single step of the history. The
+    /// caller takes the snapshot with [`Project::remember_change`] when the
+    /// drag begins.
     pub fn move_clip(&mut self, from: usize, to: usize) {
         if from >= self.clips.len() || to >= self.clips.len() || from == to {
             return;
         }
-        self.remember();
         let clip = self.clips.remove(from);
         self.clips.insert(to, clip);
+    }
+
+    /// Remember the current clip list so that it can be restored.
+    pub fn remember_change(&mut self) {
+        self.remember();
     }
 
     /// Remove every clip from the timeline.
@@ -582,6 +591,22 @@ mod tests {
         assert_eq!(project.clips.len(), 1);
         assert!(project.redo());
         assert!(project.clips.is_empty());
+    }
+
+    #[test]
+    fn a_whole_drag_is_a_single_step_of_the_history() {
+        let mut project = Project::new();
+        let id = source(&mut project, 30.0);
+        let first = project.cut(id, 0.0, 10.0).expect("the clip is created");
+        let second = project.cut(id, 10.0, 20.0).expect("the clip is created");
+
+        project.remember_change();
+        project.move_clip(0, 1);
+        assert_eq!(project.clips[0].id, second.id);
+
+        assert!(project.undo());
+        assert_eq!(project.clips[0].id, first.id);
+        assert_eq!(project.clips[1].id, second.id);
     }
 
     #[test]

@@ -57,6 +57,8 @@ pub struct SequenceResponse {
     pub seek: Option<f64>,
     /// The clip should be moved to another index.
     pub reorder: Option<(u64, usize)>,
+    /// The user started to drag this clip.
+    pub drag_started: Option<u64>,
 }
 
 /// The state of the track that has to survive between frames.
@@ -208,6 +210,7 @@ pub fn show(
         if let Some(index) = hit {
             state.dragging = Some(view.items[index].id);
             state.drag_target = Some(index);
+            response.drag_started = Some(view.items[index].id);
         }
     }
 

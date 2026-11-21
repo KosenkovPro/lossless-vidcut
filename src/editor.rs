@@ -936,6 +936,10 @@ impl Editor {
         if let Some(id) = response.select {
             self.project.select_only(id);
         }
+        if response.drag_started.is_some() {
+            // The whole drag is a single step of the history.
+            self.project.remember_change();
+        }
         if let Some((id, target)) = response.reorder {
             if let Some(from) = self.project.clips.iter().position(|clip| clip.id == id) {
                 self.project.move_clip(from, target);
