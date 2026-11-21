@@ -186,12 +186,18 @@ impl Editor {
         };
         let path = source.path.clone();
         if self.player_source != Some(source_id) {
+            // A new file starts paused, so the playback has to be continued
+            // when the preview switches to another file.
+            let was_playing = self.player.is_playing();
             if let Err(error) = self.player.open(&path, info) {
                 log::warn!("could not open the preview: {error:#}");
                 self.player_source = None;
                 return;
             }
             self.player_source = Some(source_id);
+            if was_playing {
+                self.player.set_playing(true);
+            }
         }
         self.player.seek(time);
     }

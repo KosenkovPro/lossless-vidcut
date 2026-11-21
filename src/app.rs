@@ -588,28 +588,9 @@ impl App {
             .resizable(false)
             .anchor(Align2::CENTER_CENTER, Vec2::new(0.0, 0.0))
             .show(ctx, |ui| {
-                let shortcuts: [(&str, &str); 17] = [
-                    ("Space", "Play / pause"),
-                    ("← / →", "Step one second"),
-                    ("Shift + ← / →", "Step ten seconds"),
-                    (", / .", "Previous / next frame"),
-                    ("I", "Set the in point"),
-                    ("O", "Set the out point"),
-                    ("Ctrl + Shift + I / O", "Set the in and out point"),
-                    ("S / B / Ctrl + B", "Split at the play head"),
-                    ("Enter", "Cut the marked range into the timeline"),
-                    ("Home / End", "Jump to the start / the end"),
-                    ("Delete", "Delete the selected clip"),
-                    ("Ctrl + D", "Duplicate the selected clip"),
-                    ("Ctrl + A", "Select all clips"),
-                    ("Ctrl + Z", "Undo"),
-                    ("Ctrl + Shift + Z", "Redo"),
-                    ("+ / -", "Zoom in / out"),
-                    ("Ctrl + 0", "Fit the timeline into the window"),
-                ];
                 egui::Grid::new("shortcuts").striped(true).show(ui, |ui| {
-                    for (keys, action) in shortcuts {
-                        ui.label(RichText::new(keys).strong());
+                    for (keys, action) in crate::i18n::SHORTCUTS {
+                        ui.label(RichText::new(*keys).strong());
                         ui.label(tr(self.lang(), action));
                         ui.end_row();
                     }

@@ -73,6 +73,34 @@ pub fn tf(lang: Lang, key: &'static str, args: &[(&str, &str)]) -> String {
     text
 }
 
+/// The keyboard shortcuts that are shown in the help window.
+///
+/// Every description has to exist in the Russian table, the test below makes
+/// sure of that.
+pub const SHORTCUTS: &[(&str, &str)] = &[
+    ("Space", "Play / pause"),
+    ("← / →", "Step one second"),
+    ("Shift + ← / →", "Step ten seconds"),
+    (", / .", "Previous / next frame"),
+    ("I", "Set the in point"),
+    ("O", "Set the out point"),
+    ("Ctrl + Shift + I / O", "Set the in and out point"),
+    ("S / B / Ctrl + B", "Split at the play head"),
+    ("Enter", "Cut the marked range into the timeline"),
+    ("Home / End", "Jump to the start / the end"),
+    ("Delete", "Delete the selected clip"),
+    ("Ctrl + D", "Duplicate the selected clip"),
+    ("Ctrl + A", "Select all clips"),
+    ("Ctrl + Z", "Undo"),
+    ("Ctrl + Shift + Z", "Redo"),
+    ("+ / -", "Zoom in / out"),
+    ("Ctrl + 0", "Fit the timeline into the window"),
+    ("Ctrl + O", "Open a file"),
+    ("Ctrl + E", "Export the timeline"),
+    ("Ctrl + ,", "Open the settings"),
+    ("Ctrl + /", "Show the list of shortcuts"),
+];
+
 /// The Russian translation of an English string.
 fn ru(key: &'static str) -> &'static str {
     match key {
@@ -220,6 +248,7 @@ fn ru(key: &'static str) -> &'static str {
         "Previous / next frame" => "Предыдущий / следующий кадр",
         "Set the in point" => "Отметить начало",
         "Set the out point" => "Отметить конец",
+        "Set the in and out point" => "Отметить начало и конец",
         "Cut the marked range into the timeline" => "Вырезать отмеченный участок на таймлайн",
         "Split the selected clip at the play head" => "Разрезать выбранный клип по playhead",
         "Jump to the start / the end" => "Переход в начало / конец",
@@ -229,6 +258,8 @@ fn ru(key: &'static str) -> &'static str {
         "Zoom in / out" => "Приблизить / отдалить",
         "Fit the timeline into the window" => "Вписать таймлайн в окно",
         "Open the settings" => "Открыть настройки",
+        "Open a file" => "Открыть файл",
+        "Show the list of shortcuts" => "Показать список горячих клавиш",
 
         // The name of a language is always written in that language.
         _ => key,
@@ -362,6 +393,20 @@ mod tests {
         assert!(
             missing.is_empty(),
             "these strings are missing a Russian translation: {missing:?}"
+        );
+    }
+
+    /// The descriptions of the shortcut list are translated as well.
+    #[test]
+    fn every_shortcut_is_translated() {
+        let missing: Vec<&str> = SHORTCUTS
+            .iter()
+            .map(|(_, action)| *action)
+            .filter(|action| ru(action) == *action)
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "these shortcuts are missing a Russian translation: {missing:?}"
         );
     }
 }
