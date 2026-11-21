@@ -40,14 +40,27 @@ FFMPEG_CONFIG=()
 export CFLAGS_EXTRA=""
 export LDFLAGS_EXTRA=""
 
+# Shared FFmpeg options.
+#
+# The screen grabber and the X11 output device are not needed for cutting
+# video, but they would make the binary depend on libx11 and libxcb, which
+# are missing on many servers. The same goes for the bz2 and lzma codecs.
+COMMON_CONFIG=(
+  --disable-doc --disable-debug
+  --enable-gpl --enable-version3 --enable-libx264 --pkg-config-flags=--static
+  --disable-libxcb --disable-libxcb-shm --disable-libxcb-xfixes --disable-libxcb-shape
+  --disable-outdev=xv
+  --disable-bzlib --disable-lzma
+)
+
 case "$TARGET" in
   linux-x86_64)
     X264_CONFIG=(
       --prefix="$PREFIX" --enable-static --disable-shared --disable-cli --enable-pic
     )
     FFMPEG_CONFIG=(
-      --prefix="$PREFIX" --disable-shared --enable-static --disable-doc --disable-debug
-      --enable-gpl --enable-version3 --enable-libx264 --pkg-config-flags=--static
+      --prefix="$PREFIX" --disable-shared --enable-static
+      "${COMMON_CONFIG[@]}"
       --extra-cflags="-I${PREFIX}/include" --extra-ldflags="-L${PREFIX}/lib"
     )
     ;;
@@ -66,8 +79,8 @@ case "$TARGET" in
     )
     FFMPEG_CONFIG=(
       --target-os=win32 --arch=x86_64 --cross-prefix=x86_64-w64-mingw32- --prefix="$PREFIX"
-      --disable-shared --enable-static --disable-doc --disable-debug
-      --enable-gpl --enable-version3 --enable-libx264 --pkg-config-flags=--static
+      --disable-shared --enable-static
+      "${COMMON_CONFIG[@]}"
       --extra-cflags="-I${PREFIX}/include" --extra-ldflags="-L${PREFIX}/lib -static"
     )
     ;;
@@ -77,8 +90,8 @@ case "$TARGET" in
       --prefix="$PREFIX" --enable-static --disable-shared --disable-cli --enable-pic
     )
     FFMPEG_CONFIG=(
-      --prefix="$PREFIX" --disable-shared --enable-static --disable-doc --disable-debug
-      --enable-gpl --enable-version3 --enable-libx264 --pkg-config-flags=--static
+      --prefix="$PREFIX" --disable-shared --enable-static
+      "${COMMON_CONFIG[@]}"
       --extra-cflags="-I${PREFIX}/include" --extra-ldflags="-L${PREFIX}/lib"
     )
     ;;
@@ -91,8 +104,7 @@ case "$TARGET" in
     )
     FFMPEG_CONFIG=(
       --arch=x86_64 --prefix="$PREFIX" --disable-shared --enable-static
-      --disable-doc --disable-debug
-      --enable-gpl --enable-version3 --enable-libx264 --pkg-config-flags=--static
+      "${COMMON_CONFIG[@]}"
       --extra-cflags="-I${PREFIX}/include" --extra-ldflags="-L${PREFIX}/lib"
     )
     ;;
