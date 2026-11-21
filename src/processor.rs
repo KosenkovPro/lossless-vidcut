@@ -496,7 +496,8 @@ pub async fn export_clips(
     let workdir = tempfile::tempdir().context("could not create a temporary directory")?;
     let mut parts = Vec::new();
     let total_duration: f64 = clips.iter().map(ExportClip::duration).sum();
-    let total = clips.len() as f32;
+    let total = clips.len().max(1) as f32;
+    let mut elapsed = 0.0f64;
 
     for (index, clip) in clips.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
@@ -505,7 +506,18 @@ pub async fn export_clips(
         let part = workdir
             .path()
             .join(part_file_name("part", "mkv", index + 1));
-        let base = index as f32 / total * 0.7;
+        // The progress is weighted by the length of the clips, so that a long
+        // clip does not appear to be finished before a short one.
+        let base = if total_duration > 0.0 {
+            (elapsed / total_duration) as f32 * 0.7
+        } else {
+            index as f32 / total * 0.7
+        };
+        let span = if total_duration > 0.0 {
+            (clip.duration() / total_duration) as f32 * 0.7
+        } else {
+            0.7 / total
+        };
         if let Ok(mut state) = progress.lock() {
             state.stage = format!("Cutting clip {} of {}", index + 1, clips.len());
             state.fraction = base;
@@ -518,16 +530,8 @@ pub async fn export_clips(
             mode,
             encoder,
         );
-        run_ffmpeg_within(
-            ffmpeg,
-            &args,
-            clip.duration(),
-            progress,
-            cancel,
-            base,
-            0.7 / total,
-        )
-        .await?;
+        run_ffmpeg_within(ffmpeg, &args, clip.duration(), progress, cancel, base, span).await?;
+        elapsed += clip.duration();
         parts.push(part);
     }
 

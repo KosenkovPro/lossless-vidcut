@@ -1,5 +1,35 @@
 //! Small formatting helpers shared by the user interface.
 
+use std::path::{Path, PathBuf};
+
+/// `true` when both paths point to the same file.
+///
+/// The comparison falls back to the written path when the files cannot be
+/// resolved, for example because one of them does not exist yet.
+pub fn same_file(left: &Path, right: &Path) -> bool {
+    if let (Ok(a), Ok(b)) = (left.canonicalize(), right.canonicalize()) {
+        return a == b;
+    }
+    let a = absolute(left);
+    let b = absolute(right);
+    if cfg!(windows) {
+        a.to_string_lossy()
+            .to_lowercase()
+            .eq_ignore_ascii_case(&b.to_string_lossy())
+    } else {
+        a == b
+    }
+}
+
+/// The absolute form of a path, relative to the current directory.
+fn absolute(path: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    }
+}
+
 /// Format a number of seconds as `mm:ss` or `h:mm:ss`.
 pub fn format_timecode(seconds: f64) -> String {
     if !seconds.is_finite() || seconds < 0.0 {
@@ -88,5 +118,15 @@ mod tests {
         assert_eq!(format_fps(25.0), "25 fps");
         assert_eq!(format_fps(29.97), "29.97 fps");
         assert_eq!(format_fps(0.0), "—");
+    }
+
+    #[test]
+    fn recognises_the_same_file() {
+        let file = std::env::temp_dir().join("lossless-vidcut-same-file.mp4");
+        assert!(same_file(&file, &file));
+        assert!(!same_file(
+            &file,
+            &std::env::temp_dir().join("lossless-vidcut-other-file.mp4")
+        ));
     }
 }

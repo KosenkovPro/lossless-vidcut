@@ -245,6 +245,53 @@ fn exports_clips_from_several_sources() {
 }
 
 #[test]
+fn a_cut_on_a_key_frame_has_the_exact_length() {
+    let Some(tools) = tools() else {
+        eprintln!("ffmpeg is not installed, skipping");
+        return;
+    };
+    let encoder = processor::detect_video_encoder(&tools.ffmpeg);
+    let directory = tempfile::tempdir().expect("temp dir");
+    let source = directory.path().join("source.mp4");
+    if !create_sample(&tools.ffmpeg, &encoder, &source) {
+        eprintln!("could not create the test video, skipping");
+        return;
+    }
+
+    let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
+    let progress = Arc::new(Mutex::new(processor::Progress::default()));
+    let cancel = AtomicBool::new(false);
+
+    // The sample has a key frame every second, so the clip is cut exactly
+    // where it starts and ends. The result must not be longer than the
+    // range, otherwise it would contain material that nobody asked for.
+    let clips = vec![ExportClip {
+        path: source.clone(),
+        start: 3.0_f64,
+        end: 5.0_f64,
+    }];
+    let target = directory.path().join("exact.mp4");
+    runtime
+        .block_on(processor::export_clips(
+            &tools.ffmpeg,
+            &clips,
+            &target,
+            EncodeMode::Lossless,
+            &encoder,
+            &progress,
+            &cancel,
+        ))
+        .expect("the export runs");
+
+    assert!(target.is_file());
+    let length = duration(&tools.ffprobe, &target);
+    assert!(
+        (length - 2.0).abs() < 0.15,
+        "expected exactly two seconds, got {length}"
+    );
+}
+
+#[test]
 fn a_cancelled_job_stops_early() {
     let Some(tools) = tools() else {
         eprintln!("ffmpeg is not installed, skipping");

@@ -278,20 +278,10 @@ impl App {
         });
     }
 
-    /// Cut the selected clip at the play head.
+    /// Cut the clip at the play head.
     fn split_selected(&mut self) {
-        if self.editor.split_selected() {
-            self.toasts.info(
-                &self.ctx,
-                tr(self.lang(), "The clip was cut at the play head."),
-            );
-        } else if self.editor.project.selected_clip().is_none() {
-            self.toasts
-                .info(&self.ctx, tr(self.lang(), "No clip is selected"));
-        } else {
-            self.toasts
-                .info(&self.ctx, tr(self.lang(), "There is nothing to cut here."));
-        }
+        self.editor
+            .split_selected_with_feedback(&self.ctx, &mut self.toasts);
     }
 
     /// Open the file dialog and add the chosen files to the project.

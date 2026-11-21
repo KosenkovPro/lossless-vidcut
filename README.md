@@ -45,7 +45,7 @@ without ever re-encoding a frame.
 |---|---|
 | Drag and drop | Drop one or more videos onto the window; every file becomes a clip on the timeline. |
 | Preview with sound | The video is decoded by FFmpeg into raw frames, the audio is streamed through `rodio` to the sound card. |
-| The scissors | <kbd>S</kbd>, <kbd>B</kbd> or <kbd>Ctrl</kbd>+<kbd>B</kbd> cut the selected clip at the play head. |
+| The scissors | <kbd>S</kbd>, <kbd>B</kbd> or <kbd>Ctrl</kbd>+<kbd>B</kbd> cut the clip under the play head. |
 | Mark and extract | <kbd>I</kbd> and <kbd>O</kbd> mark a range in the source, <kbd>Enter</kbd> cuts it out as a new clip. |
 | Drag to reorder | Grab a clip on the track and move it; the order is the order of the export. |
 | Key frame aware | Every I-frame of the file is detected and drawn on the timeline; cut points can be snapped to them. |
@@ -53,6 +53,7 @@ without ever re-encoding a frame.
 | Undo and redo | <kbd>Ctrl</kbd>+<kbd>Z</kbd> and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd> cover every change of the timeline. |
 | Lossless or precise | `-c copy` for instant cuts, or a re-encode for cuts that land exactly between two frames. |
 | Compatibility check | Clips that do not share the same codec, resolution, frame rate or audio format are reported, with a hint to use the re-encoding mode. |
+| Safe output | The result is never written over a file that belongs to the project. |
 
 ### The application
 
@@ -175,6 +176,12 @@ application and choose *Open*.
 5. Choose the output file in the panel on the right and press **Export the
    timeline**.
 
+In the lossless mode the cut is placed on the closest key frame, because a
+stream copy can only begin there. The application tells you where the cut
+landed and moves the boundary of the clip, so the exported file contains
+exactly what the timeline shows. Switch the encoding to *Precise* if you want
+the cut to land exactly between two frames — that re-encodes the material.
+
 If you would rather cut an exact range out of a file, press <kbd>I</kbd> at the
 beginning and <kbd>O</kbd> at the end and then <kbd>Enter</kbd>. The marked
 range becomes a new clip on the timeline.
@@ -194,7 +201,7 @@ follows.
 | <kbd>,</kbd> / <kbd>.</kbd> | One frame back / forward |
 | <kbd>I</kbd> / <kbd>O</kbd> | Set the in / out point |
 | <kbd>Ctrl</kbd> + <kbd>Shift</kbd> + <kbd>I</kbd> / <kbd>O</kbd> | Set the in / out point (DaVinci style) |
-| <kbd>S</kbd>, <kbd>B</kbd>, <kbd>Ctrl</kbd> + <kbd>B</kbd> | **Cut** the selected clip at the play head |
+| <kbd>S</kbd>, <kbd>B</kbd>, <kbd>Ctrl</kbd> + <kbd>B</kbd> | **Cut** the clip under the play head |
 | <kbd>Enter</kbd> | Cut the marked range into the timeline |
 | <kbd>Home</kbd> / <kbd>End</kbd> | Jump to the beginning / the end |
 | <kbd>Delete</kbd> | Delete the selected clip |
@@ -227,9 +234,11 @@ tools as child processes and talks to them through pipes:
   rate. The key frames are read from the packet index, which is much faster
   than decoding the file. The waveform is computed from mono 8 kHz PCM.
 * **Cutting** – the cut is `ffmpeg -ss <start> -i <file> -t <duration> -c copy`,
-  which is a stream copy. The precise mode replaces `-c copy` with a real
-  encoder, which is detected at runtime (`libx264`, `libopenh264`, `h264_nvenc`
-  or `mpeg4`).
+  which is a stream copy. A stream copy can only begin at a key frame, so the
+  cut points of the lossless mode are placed on the closest one and the
+  timeline shows the real boundaries. The precise mode replaces `-c copy` with
+  a real encoder, which is detected at runtime (`libx264`, `libopenh264`,
+  `h264_nvenc` or `mpeg4`), and then the cut lands exactly where you pointed.
 * **Joining** – every clip is cut into a temporary file, the files are listed
   in a concat demuxer list file and merged with `-f concat -safe 0 -c copy`.
 
@@ -279,7 +288,7 @@ The settings are stored as JSON in the platform configuration directory:
 | FFmpeg location | The folder that contains `ffmpeg` and `ffprobe`. Empty means *look in `PATH`*. |
 | Seek step | The length of <kbd>←</kbd> and <kbd>→</kbd>. |
 | Fast seek step | The length of <kbd>Shift</kbd>+<kbd>←</kbd> and <kbd>Shift</kbd>+<kbd>→</kbd>. |
-| Snap to key frames | Whether cut points are pulled to the closest I-frame. |
+| Snap to key frames | Whether the in and out markers are pulled to the closest I-frame. The cut points of the lossless mode always land on a key frame, because a stream copy cannot do anything else. |
 | Language | English or Russian. |
 | Desktop shortcut | Creates or removes the shortcut on the desktop. |
 

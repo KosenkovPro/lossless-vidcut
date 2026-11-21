@@ -22,7 +22,7 @@ use crate::sequence::{self, SequenceItem, SequenceState, SequenceView};
 use crate::settings::Settings;
 use crate::timeline::{self, Segment, TimelineState, TimelineView};
 use crate::toast::Toasts;
-use crate::util::{format_bytes, format_fps, format_timecode, format_timecode_ms};
+use crate::util::{format_bytes, format_fps, format_timecode, format_timecode_ms, same_file};
 
 /// A metadata request that is still running.
 struct PendingLoad {
@@ -50,6 +50,10 @@ pub struct Editor {
     pub output: Option<PathBuf>,
     /// The position of the play head on the timeline.
     pub playhead: f64,
+    /// The position inside the source where the last cut was made.
+    cut_position: f64,
+    /// `true` when the last cut had to be moved to a key frame.
+    cut_snapped: bool,
     /// The language of the user interface.
     pub lang: Lang,
     timeline: TimelineState,
@@ -71,6 +75,8 @@ impl Editor {
             encoder: processor::VideoEncoder::fallback(),
             output: None,
             playhead: 0.0,
+            cut_position: 0.0,
+            cut_snapped: false,
             lang: Lang::English,
             timeline: TimelineState::default(),
             sequence: SequenceState::default(),
@@ -465,25 +471,6 @@ impl Editor {
         self.player.toggle_play();
     }
 
-    /// The position inside the source that belongs to the play head.
-    ///
-    /// The play head lives on the timeline, while the cut points live inside
-    /// the source of the selected clip. This converts the first into the
-    /// second and falls back to the position of the preview.
-    fn playhead_in_source(&self) -> f64 {
-        let Some(clip) = self.project.selected_clip() else {
-            return self.source_position();
-        };
-        let Some(placement) = self.project.placement_of(clip.id) else {
-            return self.source_position();
-        };
-        let offset = self.playhead - placement.start;
-        if offset < 0.0 || offset > placement.duration {
-            return self.source_position();
-        }
-        clip.start + offset
-    }
-
     /// Keep the play head in step with the position inside the source.
     fn sync_playhead_with_source(&mut self) {
         let Some(clip) = self.project.selected_clip() else {
@@ -537,33 +524,54 @@ impl Editor {
         }
     }
 
-    /// Cut the selected clip at the play head.
+    /// Cut the clip at the play head.
     ///
-    /// The clip is only cut when the preview shows the file the clip was cut
-    /// from, otherwise the position of the play head would belong to a
-    /// different file.
+    /// The clip that lies under the play head is cut, like the razor of
+    /// Premiere or the blade of DaVinci Resolve. In the lossless mode the
+    /// cut is placed on the closest key frame, because a stream copy can only
+    /// be cut there.
     pub fn split_selected(&mut self) -> bool {
-        let Some(clip) = self.project.selected_clip() else {
+        let Some((clip_id, source_time)) = self.project.locate(self.playhead) else {
             return false;
         };
-        let clip_id = clip.id;
-        let source_id = clip.source_id;
-        if self.player_source != Some(source_id) {
+        let Some(clip) = self.project.clip(clip_id) else {
             return false;
-        }
-        let position = self.playhead_in_source();
-        let Some(new_id) = self.project.split_clip(clip_id, position) else {
+        };
+        let source_id = clip.source_id;
+        let snap = self.encode_mode == EncodeMode::Lossless;
+        let Some(new_id) = self.project.split_clip(clip_id, source_time, snap) else {
             return false;
         };
         self.project.selected_source = Some(source_id);
         self.project.select_only(new_id);
+        self.cut_position = self
+            .project
+            .clip(new_id)
+            .map(|clip| clip.start)
+            .unwrap_or(source_time);
+        self.cut_snapped = (self.cut_position - source_time).abs() > 0.001;
         true
     }
 
-    /// Cut the selected clip and tell the user what happened.
-    fn split_selected_with_feedback(&mut self, ctx: &egui::Context, toasts: &mut Toasts) {
+    /// Cut the clip at the play head and tell the user what happened.
+    pub fn split_selected_with_feedback(&mut self, ctx: &egui::Context, toasts: &mut Toasts) {
         if self.split_selected() {
-            toasts.info(ctx, tr(self.lang, "The clip was cut at the play head."));
+            let time = format_timecode_ms(self.cut_position);
+            if self.cut_snapped {
+                toasts.info(
+                    ctx,
+                    tf(
+                        self.lang,
+                        "The clip was cut at the closest key frame ({time}).",
+                        &[("time", &time)],
+                    ),
+                );
+            } else {
+                toasts.info(
+                    ctx,
+                    tf(self.lang, "The clip was cut at {time}.", &[("time", &time)]),
+                );
+            }
         } else if self.project.selected_clip().is_none() {
             toasts.info(ctx, tr(self.lang, "No clip is selected"));
         } else {
@@ -594,7 +602,9 @@ impl Editor {
             );
             return;
         };
-        if self.project.cut(source_id, start, end).is_some() {
+        let snap = self.encode_mode == EncodeMode::Lossless;
+        if let Some(clip) = self.project.cut(source_id, start, end, snap) {
+            self.cut_position = clip.start;
             toasts.info(ctx, tr(self.lang, "The clip was added to the timeline."));
         }
     }
@@ -605,10 +615,9 @@ impl Editor {
         if selection.is_empty() {
             return;
         }
-        for id in selection {
-            self.project.remove_clip(id);
+        if self.project.remove_clips(&selection) > 0 {
+            toasts.info(ctx, tr(self.lang, "The clip was removed."));
         }
-        toasts.info(ctx, tr(self.lang, "The clip was removed."));
     }
 
     /// Copy the selected clip.
@@ -1237,7 +1246,7 @@ impl Editor {
 
         ui.checkbox(
             &mut self.snap,
-            tr(self.lang, "Snap to key frames (lossless)"),
+            tr(self.lang, "Snap the markers to key frames"),
         );
 
         ui.horizontal_wrapped(|ui| {
@@ -1328,16 +1337,34 @@ impl Editor {
             return;
         };
 
+        // Writing the result over one of the source files would destroy the
+        // material that is still on the timeline.
+        if self
+            .project
+            .sources
+            .iter()
+            .any(|source| same_file(&source.path, &output))
+        {
+            toasts.error(
+                ctx,
+                tr(
+                    self.lang,
+                    "The result must not be written over a file of the project.",
+                ),
+            );
+            return;
+        }
+
         let mut clips: Vec<ExportClip> = Vec::new();
         let mut skipped = 0usize;
         for clip in &self.project.clips {
             match self.project.source(clip.source_id) {
-                Some(source) => clips.push(ExportClip {
+                Some(source) if source.path.exists() => clips.push(ExportClip {
                     path: source.path.clone(),
                     start: clip.start,
                     end: clip.end,
                 }),
-                None => skipped += 1,
+                _ => skipped += 1,
             }
         }
         if clips.is_empty() {

@@ -18,6 +18,27 @@ fn snap_time(keyframes: &[f64], time: f64, snap: bool) -> f64 {
     }
 }
 
+/// Pull `time` to the closest key frame that lies inside `(from, to)`.
+///
+/// A stream copy can only begin at a key frame, so a cut has to be placed
+/// there. Returns `None` when the range does not contain a key frame at all.
+fn keyframe_in_range(keyframes: &[f64], time: f64, from: f64, to: f64) -> Option<f64> {
+    let mut best: Option<f64> = None;
+    for &frame in keyframes {
+        if frame <= from + 0.001 || frame >= to - 0.001 {
+            continue;
+        }
+        let closer = match best {
+            None => true,
+            Some(current) => (frame - time).abs() < (current - time).abs(),
+        };
+        if closer {
+            best = Some(frame);
+        }
+    }
+    best
+}
+
 /// The state of a source file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceState {
@@ -314,10 +335,19 @@ impl Project {
     }
 
     /// Cut a range out of a source and append it to the timeline.
-    pub fn cut(&mut self, source_id: u64, start: f64, end: f64) -> Option<Clip> {
+    ///
+    /// With `snap` both ends are pulled to the closest key frame of the
+    /// source, because a stream copy can only start and end there.
+    pub fn cut(&mut self, source_id: u64, start: f64, end: f64, snap: bool) -> Option<Clip> {
         let source = self.source(source_id)?;
-        let start = start.clamp(0.0, source.duration());
-        let end = end.clamp(0.0, source.duration());
+        let duration = source.duration();
+        let mut start = start.clamp(0.0, duration);
+        let mut end = end.clamp(0.0, duration);
+        if snap && !source.keyframes.is_empty() {
+            let frames = &source.keyframes;
+            end = snap_time(frames, end, true).clamp(start, duration);
+            start = snap_time(frames, start, true).clamp(0.0, end);
+        }
         if end - start <= 0.001 {
             return None;
         }
@@ -355,10 +385,24 @@ impl Project {
     /// Split a clip into two at the given position inside its source.
     ///
     /// Returns the identifier of the new clip that was created behind the
-    /// split position.
-    pub fn split_clip(&mut self, clip_id: u64, at: f64) -> Option<u64> {
+    /// split position. With `snap` the position is pulled to the closest key
+    /// frame inside the clip, because a stream copy can only be cut there.
+    pub fn split_clip(&mut self, clip_id: u64, at: f64, snap: bool) -> Option<u64> {
         let index = self.clips.iter().position(|clip| clip.id == clip_id)?;
         let clip = self.clips[index].clone();
+        let at = if snap {
+            let keyframes = self
+                .source(clip.source_id)
+                .map(|source| source.keyframes.as_slice())
+                .unwrap_or(&[]);
+            if keyframes.is_empty() {
+                at
+            } else {
+                keyframe_in_range(keyframes, at, clip.start, clip.end)?
+            }
+        } else {
+            at
+        };
         if at <= clip.start + 0.001 || at >= clip.end - 0.001 {
             return None;
         }
@@ -382,6 +426,22 @@ impl Project {
         self.clips.remove(index);
         self.selected_clips.retain(|id| *id != clip_id);
         true
+    }
+
+    /// Remove several clips from the timeline in a single step of the history.
+    pub fn remove_clips(&mut self, clip_ids: &[u64]) -> usize {
+        let removable: Vec<u64> = clip_ids
+            .iter()
+            .copied()
+            .filter(|id| self.clips.iter().any(|clip| clip.id == *id))
+            .collect();
+        if removable.is_empty() {
+            return 0;
+        }
+        self.remember();
+        self.clips.retain(|clip| !removable.contains(&clip.id));
+        self.selected_clips.retain(|id| !removable.contains(id));
+        removable.len()
     }
 
     /// Copy a clip and put the copy directly behind it.
@@ -413,16 +473,6 @@ impl Project {
     /// Remember the current clip list so that it can be restored.
     pub fn remember_change(&mut self) {
         self.remember();
-    }
-
-    /// Remove every clip from the timeline.
-    pub fn clear_clips(&mut self) {
-        if self.clips.is_empty() {
-            return;
-        }
-        self.remember();
-        self.clips.clear();
-        self.clear_selection();
     }
 
     /// Undo the last change of the timeline.
@@ -527,13 +577,6 @@ impl Project {
         }
         let last = self.clips.last()?;
         Some((last.id, last.end))
-    }
-
-    /// Convert a position inside a source into a position on the timeline.
-    pub fn timeline_position(&self, clip_id: u64, source_time: f64) -> Option<f64> {
-        let placement = self.placement_of(clip_id)?;
-        let clip = self.clip(clip_id)?;
-        Some((placement.start + (source_time - clip.start)).max(placement.start))
     }
 
     /// `true` when every source that is used by a clip has the same format.
@@ -680,11 +723,36 @@ mod tests {
         id
     }
 
+    /// A source with key frames every second.
+    fn source_with_keyframes(project: &mut Project) -> u64 {
+        let id = project.add_source(Path::new("/tmp/clip.mp4"));
+        project.set_loaded(
+            id,
+            MediaInfo {
+                path: PathBuf::from("/tmp/clip.mp4"),
+                duration: 30.0,
+                video: Some(VideoInfo {
+                    codec: "h264".to_string(),
+                    width: 1920,
+                    height: 1080,
+                    fps: 25.0,
+                    ..VideoInfo::default()
+                }),
+                ..MediaInfo::default()
+            },
+            (0..=30).map(|second| second as f64).collect(),
+            Vec::new(),
+        );
+        id
+    }
+
     #[test]
     fn a_cut_creates_a_clip() {
         let mut project = Project::new();
         let id = source(&mut project, 30.0);
-        let clip = project.cut(id, 5.0, 12.0).expect("the clip is created");
+        let clip = project
+            .cut(id, 5.0, 12.0, false)
+            .expect("the clip is created");
         assert_eq!(clip.start, 5.0);
         assert_eq!(clip.end, 12.0);
         assert_eq!(clip.duration(), 7.0);
@@ -695,7 +763,9 @@ mod tests {
     fn a_cut_is_clamped_to_the_source() {
         let mut project = Project::new();
         let id = source(&mut project, 10.0);
-        let clip = project.cut(id, 5.0, 99.0).expect("the clip is created");
+        let clip = project
+            .cut(id, 5.0, 99.0, false)
+            .expect("the clip is created");
         assert_eq!(clip.end, 10.0);
     }
 
@@ -703,15 +773,19 @@ mod tests {
     fn an_empty_range_is_rejected() {
         let mut project = Project::new();
         let id = source(&mut project, 10.0);
-        assert!(project.cut(id, 5.0, 5.0).is_none());
+        assert!(project.cut(id, 5.0, 5.0, false).is_none());
     }
 
     #[test]
     fn a_clip_can_be_split() {
         let mut project = Project::new();
         let id = source(&mut project, 30.0);
-        let clip = project.cut(id, 0.0, 10.0).expect("the clip is created");
-        let second = project.split_clip(clip.id, 4.0).expect("the clip is split");
+        let clip = project
+            .cut(id, 0.0, 10.0, false)
+            .expect("the clip is created");
+        let second = project
+            .split_clip(clip.id, 4.0, false)
+            .expect("the clip is split");
         assert_eq!(project.clips.len(), 2);
         assert_eq!(project.clips[0].end, 4.0);
         assert_eq!(project.clips[1].start, 4.0);
@@ -722,8 +796,10 @@ mod tests {
     fn splitting_outside_the_clip_does_nothing() {
         let mut project = Project::new();
         let id = source(&mut project, 30.0);
-        let clip = project.cut(id, 0.0, 10.0).expect("the clip is created");
-        assert!(project.split_clip(clip.id, 20.0).is_none());
+        let clip = project
+            .cut(id, 0.0, 10.0, false)
+            .expect("the clip is created");
+        assert!(project.split_clip(clip.id, 20.0, false).is_none());
         assert_eq!(project.clips.len(), 1);
     }
 
@@ -731,7 +807,9 @@ mod tests {
     fn changes_can_be_undone_and_redone() {
         let mut project = Project::new();
         let id = source(&mut project, 30.0);
-        let clip = project.cut(id, 0.0, 10.0).expect("the clip is created");
+        let clip = project
+            .cut(id, 0.0, 10.0, false)
+            .expect("the clip is created");
         project.remove_clip(clip.id);
         assert!(project.clips.is_empty());
 
@@ -745,8 +823,12 @@ mod tests {
     fn a_whole_drag_is_a_single_step_of_the_history() {
         let mut project = Project::new();
         let id = source(&mut project, 30.0);
-        let first = project.cut(id, 0.0, 10.0).expect("the clip is created");
-        let second = project.cut(id, 10.0, 20.0).expect("the clip is created");
+        let first = project
+            .cut(id, 0.0, 10.0, false)
+            .expect("the clip is created");
+        let second = project
+            .cut(id, 10.0, 20.0, false)
+            .expect("the clip is created");
 
         project.remember_change();
         project.move_clip(0, 1);
@@ -761,8 +843,12 @@ mod tests {
     fn the_layout_places_the_clips_one_behind_the_other() {
         let mut project = Project::new();
         let id = source(&mut project, 30.0);
-        project.cut(id, 0.0, 10.0).expect("the clip is created");
-        project.cut(id, 10.0, 15.0).expect("the clip is created");
+        project
+            .cut(id, 0.0, 10.0, false)
+            .expect("the clip is created");
+        project
+            .cut(id, 10.0, 15.0, false)
+            .expect("the clip is created");
         let layout = project.layout();
         assert_eq!(layout.len(), 2);
         assert_eq!(layout[0].start, 0.0);
@@ -774,8 +860,12 @@ mod tests {
     fn a_position_finds_the_clip_it_belongs_to() {
         let mut project = Project::new();
         let id = source(&mut project, 30.0);
-        let first = project.cut(id, 0.0, 10.0).expect("the clip is created");
-        let second = project.cut(id, 20.0, 30.0).expect("the clip is created");
+        let first = project
+            .cut(id, 0.0, 10.0, false)
+            .expect("the clip is created");
+        let second = project
+            .cut(id, 20.0, 30.0, false)
+            .expect("the clip is created");
 
         let (clip_id, time) = project.locate(5.0).expect("a clip is found");
         assert_eq!(clip_id, first.id);
@@ -784,11 +874,6 @@ mod tests {
         let (clip_id, time) = project.locate(15.0).expect("a clip is found");
         assert_eq!(clip_id, second.id);
         assert_eq!(time, 25.0);
-
-        let position = project
-            .timeline_position(second.id, 25.0)
-            .expect("the position is known");
-        assert_eq!(position, 15.0);
     }
 
     #[test]
@@ -801,10 +886,79 @@ mod tests {
     }
 
     #[test]
+    fn a_lossless_cut_lands_on_a_key_frame() {
+        let mut project = Project::new();
+        let id = source_with_keyframes(&mut project);
+        let clip = project
+            .cut(id, 5.4, 12.6, true)
+            .expect("the clip is created");
+        assert_eq!(clip.start, 5.0);
+        assert_eq!(clip.end, 13.0);
+    }
+
+    #[test]
+    fn a_precise_cut_keeps_the_position() {
+        let mut project = Project::new();
+        let id = source_with_keyframes(&mut project);
+        let clip = project
+            .cut(id, 5.4, 12.6, false)
+            .expect("the clip is created");
+        assert_eq!(clip.start, 5.4);
+        assert_eq!(clip.end, 12.6);
+    }
+
+    #[test]
+    fn a_lossless_split_lands_on_a_key_frame() {
+        let mut project = Project::new();
+        let id = source_with_keyframes(&mut project);
+        let clip = project
+            .cut(id, 0.0, 20.0, false)
+            .expect("the clip is created");
+        let second = project
+            .split_clip(clip.id, 7.4, true)
+            .expect("the clip is split");
+        assert_eq!(project.clips[0].end, 7.0);
+        assert_eq!(project.clips[1].start, 7.0);
+        assert_eq!(project.clips[1].id, second);
+    }
+
+    #[test]
+    fn a_split_without_a_key_frame_inside_is_refused() {
+        let mut project = Project::new();
+        let id = source_with_keyframes(&mut project);
+        let clip = project
+            .cut(id, 0.5, 0.9, false)
+            .expect("the clip is created");
+        assert!(project.split_clip(clip.id, 0.7, true).is_none());
+        assert_eq!(project.clips.len(), 1);
+    }
+
+    #[test]
+    fn a_selection_is_removed_in_one_step() {
+        let mut project = Project::new();
+        let id = source(&mut project, 30.0);
+        let first = project
+            .cut(id, 0.0, 10.0, false)
+            .expect("the clip is created");
+        let second = project
+            .cut(id, 10.0, 20.0, false)
+            .expect("the clip is created");
+        project.select_all();
+
+        assert_eq!(project.remove_clips(&[first.id, second.id]), 2);
+        assert!(project.clips.is_empty());
+
+        assert!(project.undo());
+        assert_eq!(project.clips.len(), 2);
+    }
+
+    #[test]
     fn removing_a_source_hides_it_and_takes_its_clips_away() {
         let mut project = Project::new();
         let id = source(&mut project, 30.0);
-        project.cut(id, 0.0, 10.0).expect("the clip is created");
+        project
+            .cut(id, 0.0, 10.0, false)
+            .expect("the clip is created");
         assert!(project.remove_source(id));
         assert!(project.clips.is_empty());
         assert_eq!(project.visible_sources().count(), 0);
@@ -815,7 +969,9 @@ mod tests {
     fn removing_a_source_can_be_undone() {
         let mut project = Project::new();
         let id = source(&mut project, 30.0);
-        project.cut(id, 0.0, 10.0).expect("the clip is created");
+        project
+            .cut(id, 0.0, 10.0, false)
+            .expect("the clip is created");
         project.remove_source(id);
 
         assert!(project.undo());
@@ -832,8 +988,12 @@ mod tests {
         let mut project = Project::new();
         let first = source_with_audio(&mut project, "aac", 2);
         let second = source_with_audio(&mut project, "mp3", 2);
-        project.cut(first, 0.0, 10.0).expect("the clip is created");
-        project.cut(second, 0.0, 10.0).expect("the clip is created");
+        project
+            .cut(first, 0.0, 10.0, false)
+            .expect("the clip is created");
+        project
+            .cut(second, 0.0, 10.0, false)
+            .expect("the clip is created");
 
         let details = project.incompatibility().expect("the formats differ");
         assert!(details.audio.contains("aac"));
@@ -846,8 +1006,12 @@ mod tests {
         let mut project = Project::new();
         let first = source_with_audio(&mut project, "aac", 2);
         let second = source_with_audio(&mut project, "aac", 2);
-        project.cut(first, 0.0, 10.0).expect("the clip is created");
-        project.cut(second, 0.0, 10.0).expect("the clip is created");
+        project
+            .cut(first, 0.0, 10.0, false)
+            .expect("the clip is created");
+        project
+            .cut(second, 0.0, 10.0, false)
+            .expect("the clip is created");
 
         assert!(project.incompatibility().is_none());
         assert!(project.is_compatible());
