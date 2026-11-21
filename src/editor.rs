@@ -1253,7 +1253,7 @@ impl Editor {
                 ui.colored_label(Color32::from_rgb(240, 180, 80), "⚠");
                 let reason = tf(
                     self.lang,
-                    "{count} clip(s) do not start or end at a key frame. The result may contain a little more material than the timeline shows.",
+                    "{count} clip(s) do not start at a key frame. The result may begin a little before the timeline shows.",
                     &[("count", &outside.to_string())],
                 );
                 ui.label(RichText::new(reason).color(Color32::from_rgb(240, 196, 130)));

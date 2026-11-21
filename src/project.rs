@@ -336,17 +336,17 @@ impl Project {
 
     /// Cut a range out of a source and append it to the timeline.
     ///
-    /// With `snap` both ends are pulled to the closest key frame of the
-    /// source, because a stream copy can only start and end there.
+    /// With `snap` the start is pulled to the closest key frame of the
+    /// source, because a stream copy can only begin there. The end stays
+    /// where it was: the length of the cut is measured from the start, so it
+    /// is exact.
     pub fn cut(&mut self, source_id: u64, start: f64, end: f64, snap: bool) -> Option<Clip> {
         let source = self.source(source_id)?;
         let duration = source.duration();
         let mut start = start.clamp(0.0, duration);
-        let mut end = end.clamp(0.0, duration);
+        let end = end.clamp(0.0, duration);
         if snap && !source.keyframes.is_empty() {
-            let frames = &source.keyframes;
-            end = snap_time(frames, end, true).clamp(start, duration);
-            start = snap_time(frames, start, true).clamp(0.0, end);
+            start = snap_time(&source.keyframes, start, true).clamp(0.0, end);
         }
         if end - start <= 0.001 {
             return None;
@@ -584,10 +584,11 @@ impl Project {
         self.incompatibility().is_none()
     }
 
-    /// The number of clips whose start or end does not lie on a key frame.
+    /// The number of clips that do not start at a key frame.
     ///
-    /// A stream copy can only begin and end at a key frame, so such a clip
-    /// brings material that the user did not select.
+    /// A stream copy seeks to the key frame before the start of the clip, so
+    /// such a clip brings material that the user did not select and misses
+    /// the same amount at its end.
     pub fn cuts_without_key_frames(&self) -> usize {
         let mut count = 0;
         for clip in &self.clips {
@@ -597,13 +598,11 @@ impl Project {
             if source.keyframes.is_empty() {
                 continue;
             }
-            let lies_on_a_key_frame = |time: f64| {
-                source
-                    .keyframes
-                    .iter()
-                    .any(|frame| (frame - time).abs() < 0.05)
-            };
-            if !lies_on_a_key_frame(clip.start) || !lies_on_a_key_frame(clip.end) {
+            let lies_on_a_key_frame = source
+                .keyframes
+                .iter()
+                .any(|frame| (frame - clip.start).abs() < 0.05);
+            if !lies_on_a_key_frame {
                 count += 1;
             }
         }
@@ -919,7 +918,9 @@ mod tests {
             .cut(id, 5.4, 12.6, true)
             .expect("the clip is created");
         assert_eq!(clip.start, 5.0);
-        assert_eq!(clip.end, 13.0);
+        // The length of the cut is measured from the start, so the end stays
+        // exactly where the user marked it.
+        assert_eq!(clip.end, 12.6);
     }
 
     #[test]
