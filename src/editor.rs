@@ -1078,7 +1078,13 @@ impl Editor {
     /// Select a source and show it in the preview.
     fn select_source(&mut self, id: u64) {
         self.project.selected_source = Some(id);
-        let position = self.player.position();
+        // A different file starts at its beginning, the position of the
+        // preview only belongs to the file that is already open.
+        let position = if self.player_source == Some(id) {
+            self.player.position()
+        } else {
+            0.0
+        };
         self.open_player(id, position);
     }
 
