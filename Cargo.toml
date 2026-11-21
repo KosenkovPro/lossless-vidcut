@@ -1,6 +1,6 @@
 [package]
 name = "lossless-vidcut"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.81"
 description = "Cross-platform lightweight desktop app for fast lossless video splitting and joining, powered by ffmpeg"

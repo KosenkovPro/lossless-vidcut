@@ -967,7 +967,8 @@ fn start_video_process(
     fps: f64,
     start: f64,
 ) -> Result<Child> {
-    let child = Command::new(ffmpeg)
+    let mut command = Command::new(ffmpeg);
+    command
         .args(["-hide_banner", "-nostdin", "-loglevel", "error"])
         .arg("-ss")
         .arg(format!("{start:.4}"))
@@ -981,7 +982,9 @@ fn start_video_process(
         .arg(format!("{fps:.6}"))
         .args(["-f", "rawvideo", "pipe:1"])
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    crate::sys::hide_console(&mut command);
+    let child = command
         .spawn()
         .with_context(|| format!("could not start {} for decoding", ffmpeg.display()))?;
     Ok(child)
@@ -989,7 +992,8 @@ fn start_video_process(
 
 /// Start the `ffmpeg` process that produces interleaved float PCM.
 fn start_audio_process(ffmpeg: &Path, input: &Path, start: f64) -> Result<Child> {
-    let child = Command::new(ffmpeg)
+    let mut command = Command::new(ffmpeg);
+    command
         .args(["-hide_banner", "-nostdin", "-loglevel", "error"])
         .arg("-ss")
         .arg(format!("{start:.4}"))
@@ -999,7 +1003,9 @@ fn start_audio_process(ffmpeg: &Path, input: &Path, start: f64) -> Result<Child>
         .arg(AUDIO_SAMPLE_RATE.to_string())
         .args(["-f", "f32le", "pipe:1"])
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    crate::sys::hide_console(&mut command);
+    let child = command
         .spawn()
         .with_context(|| format!("could not start {} for decoding", ffmpeg.display()))?;
     Ok(child)

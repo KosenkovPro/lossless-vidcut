@@ -78,7 +78,8 @@ pub struct AudioInfo {
 
 /// Probe `path` and return its metadata.
 pub fn probe(ffprobe: &Path, path: &Path) -> Result<MediaInfo> {
-    let output = Command::new(ffprobe)
+    let mut command = Command::new(ffprobe);
+    command
         .args([
             "-v",
             "error",
@@ -87,7 +88,9 @@ pub fn probe(ffprobe: &Path, path: &Path) -> Result<MediaInfo> {
             "-show_format",
             "-show_streams",
         ])
-        .arg(path)
+        .arg(path);
+    crate::sys::hide_console(&mut command);
+    let output = command
         .output()
         .with_context(|| format!("could not run ffprobe on {}", path.display()))?;
 
@@ -168,7 +171,8 @@ pub fn probe(ffprobe: &Path, path: &Path) -> Result<MediaInfo> {
 /// The packets are inspected instead of the decoded frames, which makes this
 /// orders of magnitude faster on long files.
 pub fn keyframes(ffprobe: &Path, path: &Path) -> Result<Vec<f64>> {
-    let output = Command::new(ffprobe)
+    let mut command = Command::new(ffprobe);
+    command
         .args([
             "-v",
             "error",
@@ -180,7 +184,9 @@ pub fn keyframes(ffprobe: &Path, path: &Path) -> Result<Vec<f64>> {
             "-of",
             "json",
         ])
-        .arg(path)
+        .arg(path);
+    crate::sys::hide_console(&mut command);
+    let output = command
         .output()
         .with_context(|| format!("could not run ffprobe on {}", path.display()))?;
 
@@ -224,14 +230,17 @@ pub fn waveform(ffmpeg: &Path, path: &Path, duration: f64, buckets: usize) -> Re
     const RATE: u32 = 8000;
     let mut peaks = vec![0.0_f32; buckets];
 
-    let mut child = Command::new(ffmpeg)
+    let mut command = Command::new(ffmpeg);
+    command
         .args(["-v", "error", "-i"])
         .arg(path)
         .args(["-vn", "-sn", "-dn", "-ac", "1", "-ar"])
         .arg(RATE.to_string())
         .args(["-f", "f32le", "pipe:1"])
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::null());
+    crate::sys::hide_console(&mut command);
+    let mut child = command
         .spawn()
         .with_context(|| format!("could not run ffmpeg on {}", path.display()))?;
 

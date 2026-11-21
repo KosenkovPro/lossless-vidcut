@@ -57,10 +57,10 @@ impl VideoEncoder {
 
 /// Detect the best available H.264 encoder of the given FFmpeg build.
 pub fn detect_video_encoder(ffmpeg: &Path) -> VideoEncoder {
-    let Ok(output) = StdCommand::new(ffmpeg)
-        .args(["-hide_banner", "-loglevel", "error", "-encoders"])
-        .output()
-    else {
+    let mut command = StdCommand::new(ffmpeg);
+    command.args(["-hide_banner", "-loglevel", "error", "-encoders"]);
+    crate::sys::hide_console(&mut command);
+    let Ok(output) = command.output() else {
         return VideoEncoder::fallback();
     };
     let listing = String::from_utf8_lossy(&output.stdout);
@@ -244,6 +244,7 @@ pub async fn run_ffmpeg(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    crate::sys::hide_console_tokio(&mut command);
 
     let mut child = command
         .spawn()
@@ -429,6 +430,89 @@ pub async fn export_join(
     }
     let args = concat_args(&list, output, mode, encoder);
     run_ffmpeg(ffmpeg, &args, duration, progress, cancel).await?;
+
+    if let Ok(mut state) = progress.lock() {
+        state.fraction = 1.0;
+        state.stage = "Done".to_string();
+    }
+    Ok(output.to_path_buf())
+}
+
+/// A piece of a source file that has to be exported.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExportClip {
+    /// The file the clip was cut from.
+    pub path: PathBuf,
+    /// The start of the clip inside its source, in seconds.
+    pub start: f64,
+    /// The end of the clip inside its source, in seconds.
+    pub end: f64,
+}
+
+impl ExportClip {
+    /// The length of the clip in seconds.
+    pub fn duration(&self) -> f64 {
+        (self.end - self.start).max(0.0)
+    }
+}
+
+/// Cut every clip out of its source and glue the pieces together.
+///
+/// The clips may come from different files, which is why every piece is cut
+/// into a temporary file first. The pieces are then joined with the concat
+/// demuxer, which is fast because the streams are only copied.
+#[allow(clippy::too_many_arguments)]
+pub async fn export_clips(
+    ffmpeg: &Path,
+    clips: &[ExportClip],
+    output: &Path,
+    mode: EncodeMode,
+    encoder: &VideoEncoder,
+    progress: &Arc<Mutex<Progress>>,
+    cancel: &AtomicBool,
+) -> Result<PathBuf> {
+    if clips.is_empty() {
+        bail!("there is nothing to export");
+    }
+
+    let workdir = tempfile::tempdir().context("could not create a temporary directory")?;
+    let mut parts = Vec::new();
+    let total_duration: f64 = clips.iter().map(ExportClip::duration).sum();
+    let total = clips.len() as f32;
+
+    for (index, clip) in clips.iter().enumerate() {
+        if cancel.load(Ordering::Relaxed) {
+            bail!("cancelled");
+        }
+        let part = workdir
+            .path()
+            .join(part_file_name("part", "mkv", index + 1));
+        if let Ok(mut state) = progress.lock() {
+            state.stage = format!("Cutting clip {} of {}", index + 1, clips.len());
+            state.fraction = index as f32 / total * 0.7;
+        }
+        let args = cut_args(
+            &clip.path,
+            &part,
+            clip.start,
+            clip.duration(),
+            mode,
+            encoder,
+        );
+        run_ffmpeg(ffmpeg, &args, clip.duration(), progress, cancel).await?;
+        parts.push(part);
+    }
+
+    let list = workdir.path().join("concat.txt");
+    std::fs::write(&list, concat_list_content(&parts))
+        .context("could not write the concat list")?;
+
+    if let Ok(mut state) = progress.lock() {
+        state.stage = "Joining the clips".to_string();
+        state.fraction = 0.75;
+    }
+    let args = concat_args(&list, output, mode, encoder);
+    run_ffmpeg(ffmpeg, &args, total_duration, progress, cancel).await?;
 
     if let Ok(mut state) = progress.lock() {
         state.fraction = 1.0;

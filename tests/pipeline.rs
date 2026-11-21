@@ -9,7 +9,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 use lossless_vidcut::ffmpeg_tools::Tools;
-use lossless_vidcut::processor::{self, EncodeMode, VideoEncoder};
+use lossless_vidcut::processor::{self, EncodeMode, ExportClip, VideoEncoder};
 
 /// `true` when both FFmpeg binaries are available.
 fn tools() -> Option<Tools> {
@@ -186,6 +186,61 @@ fn joins_several_files() {
     assert!(
         (length - 20.0).abs() < 1.5,
         "expected about twenty seconds, got {length}"
+    );
+}
+
+#[test]
+fn exports_clips_from_several_sources() {
+    let Some(tools) = tools() else {
+        eprintln!("ffmpeg is not installed, skipping");
+        return;
+    };
+    let encoder = processor::detect_video_encoder(&tools.ffmpeg);
+    let directory = tempfile::tempdir().expect("temp dir");
+    let first = directory.path().join("first.mp4");
+    let second = directory.path().join("second.mp4");
+    if !create_sample(&tools.ffmpeg, &encoder, &first)
+        || !create_sample(&tools.ffmpeg, &encoder, &second)
+    {
+        eprintln!("could not create the test videos, skipping");
+        return;
+    }
+
+    let runtime = tokio::runtime::Runtime::new().expect("tokio runtime");
+    let progress = Arc::new(Mutex::new(processor::Progress::default()));
+    let cancel = AtomicBool::new(false);
+
+    // Two pieces out of two different files, as the timeline produces them.
+    let clips = vec![
+        ExportClip {
+            path: first.clone(),
+            start: 1.0_f64,
+            end: 3.0_f64,
+        },
+        ExportClip {
+            path: second.clone(),
+            start: 6.0_f64,
+            end: 9.0_f64,
+        },
+    ];
+    let target = directory.path().join("timeline.mp4");
+    runtime
+        .block_on(processor::export_clips(
+            &tools.ffmpeg,
+            &clips,
+            &target,
+            EncodeMode::Lossless,
+            &encoder,
+            &progress,
+            &cancel,
+        ))
+        .expect("the export runs");
+
+    assert!(target.is_file());
+    let length = duration(&tools.ffprobe, &target);
+    assert!(
+        (length - 5.0).abs() < 1.0,
+        "expected about five seconds, got {length}"
     );
 }
 

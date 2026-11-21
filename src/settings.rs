@@ -9,6 +9,8 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::i18n::Lang;
+
 /// User configurable options.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Settings {
@@ -27,6 +29,9 @@ pub struct Settings {
     /// Snap segment boundaries to key frames by default.
     #[serde(default = "default_true")]
     pub snap_to_keyframes: bool,
+    /// The language of the user interface.
+    #[serde(default)]
+    pub language: Lang,
 }
 
 fn default_step() -> f64 {
@@ -49,18 +54,30 @@ impl Default for Settings {
             fast_step_seconds: default_fast_step(),
             dark_theme: true,
             snap_to_keyframes: true,
+            language: Lang::default(),
         }
     }
 }
 
 impl Settings {
     /// Read the settings file, falling back to the defaults on any problem.
+    ///
+    /// When there is no settings file yet, the language of the operating
+    /// system is used, so that the application greets the user in their own
+    /// language.
     pub fn load() -> Self {
+        let exists = Self::config_path()
+            .map(|path| path.exists())
+            .unwrap_or(false);
         match Self::read() {
             Ok(settings) => settings,
             Err(error) => {
                 log::warn!("could not read the settings file: {error:#}");
-                Self::default()
+                let mut settings = Self::default();
+                if !exists {
+                    settings.language = Lang::detect();
+                }
+                settings
             }
         }
     }
@@ -109,9 +126,17 @@ mod tests {
             fast_step_seconds: 5.0,
             dark_theme: false,
             snap_to_keyframes: false,
+            language: Lang::Russian,
         };
         let json = serde_json::to_string(&settings).expect("encode");
         let decoded: Settings = serde_json::from_str(&json).expect("decode");
         assert_eq!(settings, decoded);
+    }
+
+    #[test]
+    fn a_file_without_a_language_stays_english() {
+        let json = r#"{"step_seconds": 2.0}"#;
+        let decoded: Settings = serde_json::from_str(json).expect("decode");
+        assert_eq!(decoded.language, Lang::English);
     }
 }
