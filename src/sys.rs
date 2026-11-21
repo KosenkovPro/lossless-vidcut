@@ -38,11 +38,9 @@ pub fn hide_console_tokio(_command: &mut tokio::process::Command) {}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn the_windows_flag_matches_the_sdk() {
         #[cfg(windows)]
-        assert_eq!(CREATE_NO_WINDOW, 0x0800_0000);
+        assert_eq!(crate::sys::CREATE_NO_WINDOW, 0x0800_0000);
     }
 }
